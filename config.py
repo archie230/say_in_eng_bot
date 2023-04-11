@@ -9,5 +9,9 @@ menu_options = {
         '2': {
                 'option':"How to say (RU) in EN",
                 'reply':"Ok, let's learn how to say (RU) in EN. \n\nWhat is/are the RU word(s)?"
+        },
+        '3': {
+                'option':"Top-5 your words",
+                'reply':"Here is your top-5 words from history"
         }
 }

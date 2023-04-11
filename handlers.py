@@ -1,11 +1,16 @@
 from functools import wraps
-from telegram import ChatAction, InlineKeyboardButton, InlineKeyboardMarkup, Update
+from telegram import ChatAction, InlineKeyboardButton, InlineKeyboardMarkup, Update, ParseMode
 import ftransc.core as ft
 from config import menu_options
 import config
 import os
 import yaml
+import json
 from types import SimpleNamespace
+from collections import Counter
+
+
+# create SECRET_KEYS singleton
 SECRET_KEYS_PATH = "secret_keys.yaml"
 if not os.path.exists(SECRET_KEYS_PATH):
     assert False, f"can't find {SECRET_KEYS_PATH}"
@@ -13,6 +18,35 @@ with open(SECRET_KEYS_PATH, "r") as f:
     SECRET_KEYS = SimpleNamespace(**yaml.safe_load(f))
     os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = SECRET_KEYS.GOOGLE_APPLICATION_CREDENTIALS
 from google_api import synthesize_text, translate_text, upload_file, transcribe_voice
+
+
+# create users history singleton
+USERS_HIST_PATH = "history.json"
+if not os.path.exists(USERS_HIST_PATH):
+    USERS_HIST = dict()
+else:
+    with open(USERS_HIST_PATH, "r") as f:
+        USERS_HIST = json.load(f)
+
+
+def dump_user_hist():
+    with open(USERS_HIST_PATH, "w") as f:
+        json.dump(USERS_HIST, f)
+
+
+def add_user(username):
+    if username not in USERS_HIST:
+        USERS_HIST[username] = list()
+
+
+def add_word(username, word):
+    USERS_HIST[username].append(word)
+    dump_user_hist()
+
+
+def get_top_words(username):
+    c = Counter(USERS_HIST[username]).most_common(5)
+    return [i[0] for i in c]
 
 
 def send_typing_action(func):
@@ -34,6 +68,7 @@ def start(update, context):
     Send a message when the command /start is issued
     """
     status = check_id(update)
+    add_user(update.message.chat.username)
     if status:
         first_name = update.message.chat.first_name
         opening_line = f"""Hi {first_name}! \nLet's start learning English together :)"""
@@ -48,6 +83,7 @@ def show_menu(update, context):
     keyboard = [
         [InlineKeyboardButton(menu_options['1']['option'], callback_data='1')],
         [InlineKeyboardButton(menu_options['2']['option'], callback_data='2')],
+        [InlineKeyboardButton(menu_options['3']['option'], callback_data='3')],
     ]
 
     reply_markup = InlineKeyboardMarkup(keyboard)
@@ -59,11 +95,16 @@ def menu_option(update, context):
     Send follow-up message after menu option is selected
     """
     query = update.callback_query
-    context.chat_data['option'] = [query.data]
-    query.edit_message_text(text=menu_options[query.data]['reply'])
-    # CallbackQueries need to be answered, even if no notification to the user is needed
-    # Some clients may have trouble otherwise. See https://core.telegram.org/bots/api#callbackquery
-    query.answer()
+    if query.data == '3':
+        top_words = get_top_words(query.from_user.username)
+        s = "Top words:\n"
+        for w in top_words:
+            s += f"<b>{w}</b>\n"
+        query.message.reply_text(s, parse_mode=ParseMode.HTML)
+    else:
+        context.chat_data['option'] = [query.data]
+        query.edit_message_text(text=menu_options[query.data]['reply'])
+        query.answer()
 
 
 @send_typing_action
@@ -102,6 +143,7 @@ def message_reply(update, context):
         if 'option' in context.chat_data.keys():
             if context.chat_data['option'][0]=='1':  # option 1 selected in previous step        
                 synthesize_text(update.message.text, filename)
+                add_word(update.message.chat.username, update.message.text)
                 send_audio(update, context, filename)
                 followup_line = f"""Hope that helps :) \nIs there anything else you would like to do?"""
                 update.message.reply_text(followup_line)
@@ -112,6 +154,7 @@ def message_reply(update, context):
             elif context.chat_data['option'][0]=='2': # option 2 selected in previous step 
                 translated_text = translate_text(update.message.text)
                 synthesize_text(translated_text, filename)
+                add_word(update.message.chat.username, update.message.text)
                 send_audio(update, context, filename)
                 followup_line = f"""Please repeat after me and send your recorded voice over the chat to check if you've pronounce it correctly"""
                 update.message.reply_text(followup_line)
@@ -149,17 +192,8 @@ def voice_check(update, context):
         new_filename = filename[:-3] + 'wav'
         upload_file(new_filename, SECRET_KEYS.BUCKET_NAME)
         response_text = transcribe_voice(new_filename, SECRET_KEYS.BUCKET_NAME)
-
-        # if SECRET_KEYS.LANGUAGE_CODE=='ja-JP':  # only applicable for Japanese language
-        #     # Convert Japanese to romaji so that comparison against correct answer can be made.
-        #     # E.g., without conversion, delicious may be おいしい or 美味しい
-        #     kks = pykakasi.kakasi()
-        #     correct = ''.join(item['hepburn'] for item in kks.convert(context.chat_data['translated_text'][0]))
-        #     response = ''.join(item['hepburn'] for item in kks.convert(response_text))
-        # else:
         correct = context.chat_data['translated_text'][0].lower()
         response = response_text.lower()
-        print(response, correct)
 
         if response==correct:
             update.message.reply_text("That's correct! Good job!")
@@ -167,7 +201,7 @@ def voice_check(update, context):
             show_menu(update, context)
             context.chat_data['option'] = ['']
         else:
-            update.message.reply_text(f"Oops! That's not correct. Please try saying {context.chat_data['text'][0]} in {config.language_code.split('-')[1]} again")
+            update.message.reply_text(f"Oops, you said c{response}</b>! That's not correct. Please try saying <b>{context.chat_data['text'][0]}</b> in <b>{config.language_code.split('-')[1]}</b> again", parse_mode=ParseMode.HTML)
             translated_voice_filename = context.chat_data['filename'][0]
             send_audio(update, context, translated_voice_filename)
 
