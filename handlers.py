@@ -203,6 +203,6 @@ def voice_check(update, context):
         show_menu(update, context)
         context.chat_data['option'] = ['']
     else:
-        update.message.reply_text(f"Oops, you said c{response}</b>! That's not correct. Please try saying <b>{context.chat_data['text'][0]}</b> in <b>{config.language_code.split('-')[1]}</b> again", parse_mode=ParseMode.HTML)
+        update.message.reply_text(f"Oops, you said <b>{response}</b>! That's not correct. Please try saying <b>{context.chat_data['text'][0]}</b> in <b>{config.language_code.split('-')[1]}</b> again", parse_mode=ParseMode.HTML)
         translated_voice_filename = context.chat_data['filename'][0]
         send_audio(update, context, translated_voice_filename)
