@@ -13,5 +13,19 @@ menu_options = {
         '3': {
                 'option':"Top-5 your words",
                 'reply':"Here is your top-5 words from history"
+        },
+        '4': {
+                'option':"Hardest words to pronounce",
+                'reply':"Here are the hardest words"
         }
+
 }
+# hardest words to pronounce
+hardest_words = [
+    "anemone",
+    "squirrel",
+    "rural",
+    "synecdoche",
+    "colonel",
+    "phenomenon"
+]

@@ -1,7 +1,7 @@
 from functools import wraps
 from telegram import ChatAction, InlineKeyboardButton, InlineKeyboardMarkup, Update, ParseMode
 import ftransc.core as ft
-from config import menu_options
+from config import menu_options, hardest_words
 import config
 import os
 import yaml
@@ -67,13 +67,11 @@ def start(update, context):
     """
     Send a message when the command /start is issued
     """
-    status = check_id(update)
     add_user(update.message.chat.username)
-    if status:
-        first_name = update.message.chat.first_name
-        opening_line = f"""Hi {first_name}! \nLet's start learning English together :)"""
-        update.message.reply_text(opening_line)
-        show_menu(update, context)
+    first_name = update.message.chat.first_name
+    opening_line = f"""Hi {first_name}! \nLet's start learning English together :)"""
+    update.message.reply_text(opening_line)
+    show_menu(update, context)
 
 
 def show_menu(update, context):
@@ -84,6 +82,7 @@ def show_menu(update, context):
         [InlineKeyboardButton(menu_options['1']['option'], callback_data='1')],
         [InlineKeyboardButton(menu_options['2']['option'], callback_data='2')],
         [InlineKeyboardButton(menu_options['3']['option'], callback_data='3')],
+        [InlineKeyboardButton(menu_options['4']['option'], callback_data='4')],
     ]
 
     reply_markup = InlineKeyboardMarkup(keyboard)
@@ -95,14 +94,23 @@ def menu_option(update, context):
     Send follow-up message after menu option is selected
     """
     query = update.callback_query
+    context.chat_data['option'] = [query.data]
     if query.data == '3':
         top_words = get_top_words(query.from_user.username)
         s = "Top words:\n"
         for w in top_words:
             s += f"<b>{w}</b>\n"
         query.message.reply_text(s, parse_mode=ParseMode.HTML)
+        query.answer()
+        message_reply(update, context)
+    elif query.data == '4':
+        s = "Hardest words:\n"
+        for w in hardest_words:
+            s += f"<b>{w}</b>\n"
+        query.message.reply_text(s, parse_mode=ParseMode.HTML)
+        query.answer()
+        message_reply(update, context)
     else:
-        context.chat_data['option'] = [query.data]
         query.edit_message_text(text=menu_options[query.data]['reply'])
         query.answer()
 
@@ -112,9 +120,7 @@ def help(update, context):
     """
     Send a message when the command /help is issued
     """
-    status = check_id(update)
-    if status:
-        update.message.reply_text('Say hi or type /start to start chatting')
+    update.message.reply_text('Say hi or type /start to start chatting')
 
 
 def send_audio(update, context, filename):
@@ -137,42 +143,40 @@ def message_reply(update, context):
     """
     Response to normal messages
     """
-    status = check_id(update)
-    if status:
-        filename = 'pronunciation.mp3'
-        if 'option' in context.chat_data.keys():
-            if context.chat_data['option'][0]=='1':  # option 1 selected in previous step        
-                synthesize_text(update.message.text, filename)
-                add_word(update.message.chat.username, update.message.text)
-                send_audio(update, context, filename)
-                followup_line = f"""Hope that helps :) \nIs there anything else you would like to do?"""
-                update.message.reply_text(followup_line)
-                show_menu(update, context)
-                context.chat_data['filename'] = [filename]
-                context.chat_data['option'] = ['']
+    filename = 'pronunciation.mp3'
+    if 'option' in context.chat_data.keys():
+        if context.chat_data['option'][0]=='1':  # option 1 selected in previous step        
+            synthesize_text(update.message.text, filename)
+            add_word(update.message.chat.username, update.message.text)
+            send_audio(update, context, filename)
+            followup_line = f"""Hope that helps :) \nIs there anything else you would like to do?"""
+            update.message.reply_text(followup_line)
+            show_menu(update, context)
+            context.chat_data['filename'] = [filename]
+            context.chat_data['option'] = ['']
 
-            elif context.chat_data['option'][0]=='2': # option 2 selected in previous step 
-                translated_text = translate_text(update.message.text)
-                synthesize_text(translated_text, filename)
-                add_word(update.message.chat.username, update.message.text)
-                send_audio(update, context, filename)
-                followup_line = f"""Please repeat after me and send your recorded voice over the chat to check if you've pronounce it correctly"""
-                update.message.reply_text(followup_line)
-                context.chat_data['translated_text'] = [translated_text]
-                context.chat_data['text'] = [update.message.text]
-                context.chat_data['filename'] = [filename]
-                context.chat_data['option'] = ['']
+        elif context.chat_data['option'][0]=='2': # option 2 selected in previous step 
+            translated_text = translate_text(update.message.text)
+            synthesize_text(translated_text, filename)
+            add_word(update.message.chat.username, translated_text)
+            send_audio(update, context, filename)
+            followup_line = f"""Please repeat after me and send your recorded voice over the chat to check if you've pronounce it correctly"""
+            update.message.reply_text(followup_line)
+            context.chat_data['translated_text'] = [translated_text]
+            context.chat_data['text'] = [update.message.text]
+            context.chat_data['filename'] = [filename]
+            context.chat_data['option'] = ['']
 
-            else:
-                followup_line = f"""Would you like to do the following?"""
-                update.message.reply_text(followup_line)
-                show_menu(update, context)
         else:
-            if update.message.text.lower() in ['hi', 'hello', 'yo', 'good morning', 'good afternoon', 'good evening']:
-                start(update, context)
-            else:
-                update.message.reply_text("Sorry, I'm a young bot so I've trouble understanding you. \n Would you like to do the following?")
-                show_menu(update, context)
+            followup_line = f"""Would you like to do the following?"""
+            update.message.reply_text(followup_line)
+            show_menu(update, context)
+    else:
+        if update.message.text.lower() in ['hi', 'hello', 'yo', 'good morning', 'good afternoon', 'good evening']:
+            start(update, context)
+        else:
+            update.message.reply_text("Sorry, I'm a young bot so I've trouble understanding you. \n Would you like to do the following?")
+            show_menu(update, context)
 
 
 @send_typing_action
@@ -180,38 +184,25 @@ def voice_check(update, context):
     """
     Check user's pronunciations against correct answer
     """
-    status = check_id(update)
-    if status:
-        # Fetch voice message
-        voice = context.bot.getFile(update.message.voice.file_id)
+    # Fetch voice message
+    voice = context.bot.getFile(update.message.voice.file_id)
 
-        # Transcode the voice message from audio/x-opus+ogg to audio/x-wav
-        filename = 'pronunciation' + '_2.ogg'
-        ft.transcode(voice.download(filename), 'wav')
+    # Transcode the voice message from audio/x-opus+ogg to audio/x-wav
+    filename = 'pronunciation' + '_2.ogg'
+    ft.transcode(voice.download(filename), 'wav')
 
-        new_filename = filename[:-3] + 'wav'
-        upload_file(new_filename, SECRET_KEYS.BUCKET_NAME)
-        response_text = transcribe_voice(new_filename, SECRET_KEYS.BUCKET_NAME)
-        correct = context.chat_data['translated_text'][0].lower()
-        response = response_text.lower()
+    new_filename = filename[:-3] + 'wav'
+    upload_file(new_filename, SECRET_KEYS.BUCKET_NAME)
+    response_text = transcribe_voice(new_filename, SECRET_KEYS.BUCKET_NAME)
+    correct = context.chat_data['translated_text'][0].lower()
+    response = response_text.lower()
 
-        if response==correct:
-            update.message.reply_text("That's correct! Good job!")
-            update.message.reply_text("Is there anything else you would like to do?")
-            show_menu(update, context)
-            context.chat_data['option'] = ['']
-        else:
-            update.message.reply_text(f"Oops, you said c{response}</b>! That's not correct. Please try saying <b>{context.chat_data['text'][0]}</b> in <b>{config.language_code.split('-')[1]}</b> again", parse_mode=ParseMode.HTML)
-            translated_voice_filename = context.chat_data['filename'][0]
-            send_audio(update, context, translated_voice_filename)
-
-
-def check_id(update):
-    """
-    Check sender's ID is allowed
-    """
-    id = int(update.message.from_user.id)
-    verification = True if (id==SECRET_KEYS.TELEGRAM_ID or SECRET_KEYS.TELEGRAM_ID is None) else False
-    if verification is False:
-        update.message.reply_text("Oops! I don't really know you so I cannot talk to you. \n\nSorry about that!")
-    return verification
+    if response==correct:
+        update.message.reply_text("That's correct! Good job!")
+        update.message.reply_text("Is there anything else you would like to do?")
+        show_menu(update, context)
+        context.chat_data['option'] = ['']
+    else:
+        update.message.reply_text(f"Oops, you said c{response}</b>! That's not correct. Please try saying <b>{context.chat_data['text'][0]}</b> in <b>{config.language_code.split('-')[1]}</b> again", parse_mode=ParseMode.HTML)
+        translated_voice_filename = context.chat_data['filename'][0]
+        send_audio(update, context, translated_voice_filename)
